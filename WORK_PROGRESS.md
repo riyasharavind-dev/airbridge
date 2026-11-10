@@ -31,3 +31,6 @@ Added persistent validated device/video preferences and Windows GPU/driver inspe
 
 ## Native screen capture
 Added native capture of the first display with a separate framebuffer preview window, explicit start/stop controls and Escape-to-close. Captures stay local. Frontend production build passed; four existing native tests passed; the explicit real_capture_smoke test passed on the actual Windows desktop (one frame captured in memory, not saved or transmitted). Native preview visual rendering, sustained FPS, network streaming, secure pairing and genuine extended display remain unverified/unimplemented. Windows installer rebuild in progress.
+
+## Display selection
+Added actual monitor enumeration (ID, dimensions, position, primary flag), display selection, refresh and capture of selected monitor. Hot-unplug selection returns an explicit error. Four native tests and frontend production build passed. Multiple physical monitor behavior and updated preview UI not manually verified. Installer not rebuilt for this change. Secure pairing remains unimplemented.

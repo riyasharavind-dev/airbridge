@@ -7,17 +7,17 @@ pub fn preview_status(state:tauri::State<'_,Capture>)->Result<Status,String>{sta
 #[tauri::command]
 pub fn stop_preview(state:tauri::State<'_,Capture>){state.stop.store(true,Ordering::Relaxed);}
 #[tauri::command]
-pub fn start_preview(state:tauri::State<'_,Capture>)->Result<(),String>{
+pub fn start_preview(display_id:u32,state:tauri::State<'_,Capture>)->Result<(),String>{
  let mut status=state.status.lock().map_err(|_|"Preview status unavailable")?;
  if status.running{return Err("Preview already running".into())}*status=Status{running:true,..Default::default()};
  state.stop.store(false,Ordering::Relaxed);let stop=state.stop.clone();let status=state.status.clone();
  std::thread::spawn(move||{
-  let result=run(stop);
+  let result=run(stop,display_id);
   if let Ok(mut s)=status.lock(){s.running=false;match result{Ok(frames)=>s.frames=frames,Err(error)=>s.error=Some(error)}}
  });Ok(())
 }
-fn run(stop:Arc<AtomicBool>)->Result<u64,String>{
- let screens=screenshots::Screen::all().map_err(|e|e.to_string())?;let screen=screens.first().ok_or("No screen available")?;
+fn run(stop:Arc<AtomicBool>,display_id:u32)->Result<u64,String>{
+ let screens=screenshots::Screen::all().map_err(|e|e.to_string())?;let screen=screens.iter().find(|s|s.display_info.id==display_id).ok_or("Selected display is no longer available; refresh displays")?;
  let first=screen.capture().map_err(|e|e.to_string())?;let width=first.width() as usize;let height=first.height() as usize;
  let mut window=minifb::Window::new("AirBridge - local screen preview (Escape to close)",960,540,minifb::WindowOptions{resize:true,..Default::default()}).map_err(|e|e.to_string())?;
  window.set_target_fps(30);let mut frames=0;
@@ -30,3 +30,7 @@ fn run(stop:Arc<AtomicBool>)->Result<u64,String>{
 }
 
 #[cfg(test)]mod tests {#[test]#[ignore="Requires an interactive Windows desktop; captures one frame without saving"]fn real_capture_smoke(){let screens=screenshots::Screen::all().expect("screen enumeration");let image=screens.first().expect("display").capture().expect("screen capture");assert!(image.width()>0&&image.height()>0);assert_eq!(image.as_raw().len(),image.width() as usize*image.height() as usize*4);}}
+
+#[derive(serde::Serialize)]pub struct Display {id:u32,width:u32,height:u32,x:i32,y:i32,primary:bool}
+#[tauri::command]
+pub async fn list_displays()->Result<Vec<Display>,String>{tauri::async_runtime::spawn_blocking(||screenshots::Screen::all().map(|screens|screens.into_iter().map(|screen|{let d=screen.display_info;Display{id:d.id,width:d.width,height:d.height,x:d.x,y:d.y,primary:d.is_primary}}).collect()).map_err(|e|e.to_string())).await.map_err(|e|e.to_string())?}
