@@ -46,3 +46,6 @@ Added live captured-frame count, achieved average FPS, sampled capture-plus-conv
 
 ## Dependency readiness inspection
 Added explicit dependency inspection for connected displays and FFmpeg compiled H.264 encoder inventory. Missing FFmpeg is handled without blocking local preview; official references are shown, no installers executed. Query timeout is five seconds. Compiled encoder names do not establish runtime GPU capability. Unimplemented secure streaming and extended display are clearly reported. Seven native tests passed; interactive capture test skipped. Interactive dependency UI not manually verified; installer not rebuilt.
+
+## One-frame H264 diagnostic
+Added selected-display capture into a local FFmpeg/libx264 software encoding check. Uses in-memory pipes, 15-second process timeout, bounded output and Annex B prefix check. Odd dimensions are padded for YUV420. UI reports encoded dimensions, bytes and time including process startup. No saving/transmission. FFmpeg is not installed on this host, so real encoding execution is not verified; no encoding success claimed. Decode, sustained throughput, secure pairing and streaming remain unimplemented. Installer not rebuilt. Reference: https://ffmpeg.org/ffmpeg-formats.html.
