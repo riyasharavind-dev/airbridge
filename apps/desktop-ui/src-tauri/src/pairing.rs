@@ -33,6 +33,10 @@ pub struct Status {
     pub received_frames: u64,
     pub media_error: Option<String>,
     pub events: Vec<String>,
+    pub quality_percent: u32,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub dropped_frames: u64,
 }
 #[derive(Default)]
 pub struct Pairing {
@@ -176,7 +180,7 @@ fn session_cancellable(
         s.verification = code
     });
     socket
-        .set_read_timeout(Some(Duration::from_millis(100)))
+        .set_read_timeout(Some(Duration::from_millis(10)))
         .map_err(|e| e.to_string())?;
     let started = Instant::now();
     let mut last_received = Instant::now();
@@ -594,6 +598,7 @@ pub fn start_mirror(
                 .ok_or("Selected display unavailable")?;
             let mut encoder =
                 crate::native_codec::NativeEncoder::new(settings.bitrate_mbps, settings.fps)?;
+            let mut adaptation = crate::adaptation::Adaptation::default();
             while !stop.load(std::sync::atomic::Ordering::Relaxed)
                 && !shutdown.load(std::sync::atomic::Ordering::Relaxed)
             {
@@ -609,7 +614,9 @@ pub fn start_mirror(
                 };
                 let ratio = (max_w / frame.width() as f64)
                     .min(max_h / frame.height() as f64)
-                    .min(1.0);
+                    .min(1.0)
+                    * adaptation.percent() as f64
+                    / 100.0;
                 let w = ((frame.width() as f64 * ratio).floor().max(2.0) as u32) & !1;
                 let h = ((frame.height() as f64 * ratio).floor().max(2.0) as u32) & !1;
                 let frame = screenshots::image::imageops::resize(
@@ -622,14 +629,26 @@ pub fn start_mirror(
                 if stop.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
-                match tx.try_send(Command::Frame(crate::media::Frame {
+                let queue_full = match tx.try_send(Command::Frame(crate::media::Frame {
                     width: w,
                     height: h,
                     packet,
                 })) {
-                    Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
+                    Ok(()) => false,
+                    Err(mpsc::TrySendError::Full(_)) => true,
                     Err(_) => return Err("Connection closed".into()),
-                }
+                };
+                let elapsed = started.elapsed();
+                adaptation
+                    .observe(queue_full || elapsed.as_secs_f64() > 1.25 / settings.fps as f64);
+                update(&status, |s| {
+                    s.quality_percent = adaptation.percent();
+                    s.frame_width = w;
+                    s.frame_height = h;
+                    if queue_full {
+                        s.dropped_frames += 1;
+                    }
+                });
                 let interval = Duration::from_secs_f64(1.0 / settings.fps as f64);
                 if let Some(delay) = interval.checked_sub(started.elapsed()) {
                     std::thread::sleep(delay);

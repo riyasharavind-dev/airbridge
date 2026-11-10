@@ -12,12 +12,13 @@ Current state: development prototype. Full product acceptance is not complete.
 - Owned discovery, preview, session and receiver workers with cancellation/join on application exit.
 - Fullscreen receiver toggle (F11), explicit reconnect with fresh verification, bounded phase history.
 - Local IPv4 discovery restriction, bounded peers and reply throttling.
+- Adaptive resolution responding to sender queue pressure and frame-processing time, with gradual recovery and sender queue-drop statistics.
 
 ## Must finish before a reliable Windows release
 - Verify continuous mirroring on two physical computers, both directions.
 - Validate native window startup/rendering, close, Escape and disconnect cleanup.
 - Persistent native H.264 codec pipeline is implemented; still measure sustained FPS, latency, CPU and memory across two devices.
-- Hardware encoder/decoder runtime probes, software fallback selection and adaptive bitrate.
+- Hardware encoder/decoder runtime probes and selection. Adaptive resolution is implemented; bitrate enforcement, receiver/network feedback and real congestion/performance validation remain.
 - Explicit reconnect is implemented. Seamless automatic recovery, persistent peer identity/credential storage and reviewed pairing protocol remain.
 - Main mirror/capture/discovery/receiver worker cancellation and joining are implemented; validate GUI exit paths and optional diagnostic subprocess cleanup.
 - Capture backend migration/evaluation for Windows Graphics Capture/Desktop Duplication; current screenshots capture is a fallback prototype.

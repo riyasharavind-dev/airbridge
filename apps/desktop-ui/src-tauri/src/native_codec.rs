@@ -160,3 +160,19 @@ mod drop_tests {
         assert!((((pixels[0] >> 16) & 255) as i32 - 159).abs() < 12);
     }
 }
+
+#[cfg(test)]
+mod resize_tests {
+    use super::*;
+    #[test]
+    fn persistent_codec_handles_adaptive_dimensions() {
+        let mut e = NativeEncoder::new(8, 30).unwrap();
+        let mut d = NativeDecoder::new().unwrap();
+        for (w, h) in [(64, 48), (48, 32), (64, 48)] {
+            let b = e
+                .encode(w, h, &[150, 30, 60, 255].repeat(w as usize * h as usize))
+                .unwrap();
+            assert_eq!(d.decode(&b, w, h).unwrap().len(), w as usize * h as usize);
+        }
+    }
+}
