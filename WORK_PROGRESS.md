@@ -43,3 +43,6 @@ Added per-device and manual local IPv4 connection checks using UDP echo and meas
 
 ## Live capture diagnostics
 Added live captured-frame count, achieved average FPS, sampled capture-plus-conversion time and target FPS. Preview now loads the validated saved 30/60 FPS preference on start. Target FPS is a limit, not a guaranteed rate. Capture worker panic recovery clears running state and reports error. Six native tests passed; interactive capture smoke skipped. Live preview metrics not manually measured; no performance results claimed. Installer not rebuilt.
+
+## Dependency readiness inspection
+Added explicit dependency inspection for connected displays and FFmpeg compiled H.264 encoder inventory. Missing FFmpeg is handled without blocking local preview; official references are shown, no installers executed. Query timeout is five seconds. Compiled encoder names do not establish runtime GPU capability. Unimplemented secure streaming and extended display are clearly reported. Seven native tests passed; interactive capture test skipped. Interactive dependency UI not manually verified; installer not rebuilt.
