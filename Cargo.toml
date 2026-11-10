@@ -1,0 +1,3 @@
+[workspace]
+members = ["core/device-capabilities"]
+resolver = "2"

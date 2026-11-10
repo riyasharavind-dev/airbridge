@@ -1,0 +1,31 @@
+{
+  "productName": "AirBridge",
+  "version": "0.1.0",
+  "identifier": "local.airbridge.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 1420",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AirBridge",
+        "width": 1100,
+        "height": 740
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "shortDescription": "AirBridge development build",
+    "longDescription": "Wireless display application under development. Streaming is not yet available."
+  }
+}
