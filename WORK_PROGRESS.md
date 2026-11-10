@@ -25,3 +25,6 @@ Windows NSIS installer build passed: apps/desktop-ui/src-tauri/target/release/bu
 
 ## LAN discovery milestone
 Implemented UDP broadcast discovery on port 45873, bounded advertisement parsing, 12-second peer expiration, live list and error reporting. Two Rust packet validation tests passed; frontend build passed. Discovery is untrusted and may include the local device. No two-device validation yet. Added GitHub Actions Windows/Linux development packaging workflow; execution not yet verified. Pairing, media transport, native capture and virtual displays remain unimplemented.
+
+## Windows-first development
+Added persistent validated device/video preferences and Windows GPU/driver inspection through CIM. Four native tests passed; TypeScript/Vite production build passed. These preferences do not enable streaming. Secure pairing, native capture, H.264 encoding/decoding, encrypted transport, native receiver rendering and genuine virtual display remain unimplemented. Latest installer must be rebuilt before distributing these changes. Full Windows completion has not been achieved.
