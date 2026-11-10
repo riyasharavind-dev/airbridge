@@ -1,21 +1,70 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-mod discovery;
-mod settings;
 mod capture;
-mod dependencies;
 mod codec;
+mod dependencies;
+mod discovery;
+mod media;
 mod pairing;
+mod settings;
 #[derive(serde::Serialize)]
-struct Diagnostics { os: String, architecture: String, device_name: String, session_type: String }
-#[tauri::command]
-fn diagnostics() -> Diagnostics {
- Diagnostics { os: std::env::consts::OS.into(), architecture: std::env::consts::ARCH.into(), device_name: std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "Unknown".into()), session_type: std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| if cfg!(windows) { "Windows desktop".into() } else { "Unknown".into() }) }
+struct Diagnostics {
+    os: String,
+    architecture: String,
+    device_name: String,
+    session_type: String,
 }
 #[tauri::command]
-async fn hardware_report()->Result<String,String>{
- tauri::async_runtime::spawn_blocking(||{
+fn diagnostics() -> Diagnostics {
+    Diagnostics {
+        os: std::env::consts::OS.into(),
+        architecture: std::env::consts::ARCH.into(),
+        device_name: std::env::var("COMPUTERNAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .unwrap_or_else(|_| "Unknown".into()),
+        session_type: std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| {
+            if cfg!(windows) {
+                "Windows desktop".into()
+            } else {
+                "Unknown".into()
+            }
+        }),
+    }
+}
+#[tauri::command]
+async fn hardware_report() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(||{
   #[cfg(windows)] { use std::os::windows::process::CommandExt;let output=std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command","Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion,VideoProcessor | ConvertTo-Json -Compress"]).creation_flags(0x08000000).output().map_err(|e|e.to_string())?;if !output.status.success(){return Err("Windows GPU query failed".into())}Ok(String::from_utf8_lossy(&output.stdout).into_owned()) }
   #[cfg(not(windows))] { Err("Windows GPU diagnostics are unavailable on this platform".into()) }
  }).await.map_err(|e|e.to_string())?
 }
-fn main() { let discovery = discovery::Discovery::start(); tauri::Builder::default().manage(discovery).manage(pairing::Pairing::default()).manage(capture::Capture::default()).invoke_handler(tauri::generate_handler![diagnostics, discovery::nearby_devices, discovery::check_device, settings::load_settings, settings::save_settings, hardware_report, capture::start_preview, capture::stop_preview, capture::preview_status, capture::list_displays, capture::save_screenshot, dependencies::dependency_report, codec::test_h264, codec::receiver_preview, pairing::listen_pairing, pairing::connect_pairing, pairing::pairing_status, pairing::pairing_action]).run(tauri::generate_context!()).expect("AirBridge startup failed"); }
+fn main() {
+    let discovery = discovery::Discovery::start();
+    tauri::Builder::default()
+        .manage(discovery)
+        .manage(pairing::Pairing::default())
+        .manage(capture::Capture::default())
+        .invoke_handler(tauri::generate_handler![
+            diagnostics,
+            discovery::nearby_devices,
+            discovery::check_device,
+            settings::load_settings,
+            settings::save_settings,
+            hardware_report,
+            capture::start_preview,
+            capture::stop_preview,
+            capture::preview_status,
+            capture::list_displays,
+            capture::save_screenshot,
+            dependencies::dependency_report,
+            codec::test_h264,
+            codec::receiver_preview,
+            pairing::listen_pairing,
+            pairing::connect_pairing,
+            pairing::pairing_status,
+            pairing::pairing_action,
+            pairing::start_mirror,
+            pairing::stop_mirror
+        ])
+        .run(tauri::generate_context!())
+        .expect("AirBridge startup failed");
+}
