@@ -40,3 +40,6 @@ Added asynchronous screenshot export to Pictures/AirBridge with unique filenames
 
 ## LAN reachability diagnostics
 Added per-device and manual local IPv4 connection checks using UDP echo and measured round-trip time. Two-second timeout, exact response matching, fixed packet size, source filtering through connected socket, and local-address validation. Results explicitly do not authenticate identity. Six native tests passed including real loopback UDP and invalid reply rejection; interactive capture test skipped. Two-machine firewall/network behavior not verified. Installer not rebuilt for this change.
+
+## Live capture diagnostics
+Added live captured-frame count, achieved average FPS, sampled capture-plus-conversion time and target FPS. Preview now loads the validated saved 30/60 FPS preference on start. Target FPS is a limit, not a guaranteed rate. Capture worker panic recovery clears running state and reports error. Six native tests passed; interactive capture smoke skipped. Live preview metrics not manually measured; no performance results claimed. Installer not rebuilt.
