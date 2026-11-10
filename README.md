@@ -7,7 +7,7 @@ Windows wireless display development prototype. Genuine extended display is unav
 2. Mirror encoding/decoding is built into the application. FFmpeg is optional, used only by the separate FFmpeg diagnostic buttons.
 3. On the receiver choose **Accept connections for 60 seconds**. On the sender use a discovered device's **Connect** button or its local IPv4 address.
 4. Compare the entire verification code through a trusted channel. Approve on both computers only if every character matches.
-5. Choose the sender display and **Share selected display**. The receiver opens a native window. Use **Stop sharing**, **Disconnect**, or close the receiver to end.
+5. Choose the sender display and **Share selected display**. The receiver opens a native window. Use **Stop sharing**, **Disconnect**, or close the receiver to end. F11 toggles a borderless fullscreen receiver on the primary monitor; Escape closes it. After disconnecting, **Reconnect previous peer** starts a fresh verified connection and requires the other computer to accept connections again.
 
 Mirroring reuses built-in OpenH264 encoder and decoder instances. Independent keyframes currently allow safe frame dropping at the cost of extra bandwidth. FPS targets are limits, not guarantees; low-latency performance and two-device operation are not yet validated. Each session requires fresh verification; peer trust is not persisted.
 

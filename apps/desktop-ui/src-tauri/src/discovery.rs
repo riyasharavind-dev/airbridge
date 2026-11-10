@@ -15,9 +15,11 @@ pub struct Peer {
 pub struct Discovery {
     peers: Arc<Mutex<HashMap<String, (Peer, Instant)>>>,
     error: Option<String>,
+    workers: crate::workers::Workers,
 }
 impl Discovery {
     pub fn start() -> Self {
+        let workers = crate::workers::Workers::default();
         let peers = Arc::new(Mutex::new(HashMap::new()));
         let socket = match UdpSocket::bind(("0.0.0.0", PORT)) {
             Ok(s) => s,
@@ -25,6 +27,7 @@ impl Discovery {
                 return Self {
                     peers,
                     error: Some(e.to_string()),
+                    workers,
                 }
             }
         };
@@ -35,30 +38,51 @@ impl Discovery {
             return Self {
                 peers,
                 error: Some(e.to_string()),
+                workers,
             };
         }
         let state = peers.clone();
-        std::thread::spawn(move || {
+        let stop = workers.stop.clone();
+        let worker = std::thread::spawn(move || {
             let name = std::env::var("COMPUTERNAME")
                 .or_else(|_| std::env::var("HOSTNAME"))
                 .unwrap_or_else(|_| "AirBridge device".into())
                 .replace(['\n', '\r', '|'], " ");
             let identity = format!("AIRBRIDGE_PEER_V1|{}|{}", name, std::env::consts::OS);
+            let mut replies: HashMap<std::net::IpAddr, (Instant, u8)> = HashMap::new();
             let mut last = Instant::now() - Duration::from_secs(5);
             let mut buffer = [0u8; 512];
-            loop {
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                 if last.elapsed() > Duration::from_secs(3) {
                     let _ = socket.send_to(QUERY, ("255.255.255.255", PORT));
                     last = Instant::now();
                 }
                 if let Ok((n, source)) = socket.recv_from(&mut buffer) {
+                    let allowed = matches!(source.ip(),std::net::IpAddr::V4(ip)if ip.is_private()||ip.is_loopback()||ip.is_link_local());
+                    if !allowed {
+                        continue;
+                    }
+                    let response = n == 32 && buffer[..8] == *b"ABPING01" || &buffer[..n] == QUERY;
+                    if response {
+                        replies.retain(|_, (seen, _)| seen.elapsed() < Duration::from_secs(1));
+                        if !replies.contains_key(&source.ip()) && replies.len() >= 128 {
+                            continue;
+                        }
+                        let entry = replies.entry(source.ip()).or_insert((Instant::now(), 0));
+                        if entry.1 >= 10 {
+                            continue;
+                        }
+                        entry.1 += 1;
+                    }
                     if n == 32 && buffer[..8] == *b"ABPING01" {
                         let _ = socket.send_to(&buffer[..n], source);
                     } else if &buffer[..n] == QUERY {
                         let _ = socket.send_to(identity.as_bytes(), source);
                     } else if let Some(peer) = parse(&buffer[..n], source.ip().to_string()) {
                         if let Ok(mut map) = state.lock() {
-                            map.insert(peer.address.clone(), (peer, Instant::now()));
+                            if map.contains_key(&peer.address) || map.len() < 256 {
+                                map.insert(peer.address.clone(), (peer, Instant::now()));
+                            }
                         }
                     }
                 }
@@ -67,7 +91,12 @@ impl Discovery {
                 }
             }
         });
-        Self { peers, error: None }
+        workers.track(worker);
+        Self {
+            peers,
+            error: None,
+            workers,
+        }
     }
 }
 fn parse(bytes: &[u8], address: String) -> Option<Peer> {
@@ -208,5 +237,11 @@ mod probe_tests {
         });
         assert!(probe(address).unwrap_err().contains("Unexpected"));
         worker.join().unwrap();
+    }
+}
+
+impl Discovery {
+    pub fn shutdown(&self) {
+        self.workers.shutdown();
     }
 }

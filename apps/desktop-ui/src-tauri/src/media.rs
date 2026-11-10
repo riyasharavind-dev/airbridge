@@ -50,9 +50,26 @@ impl Assembly {
         Err("Unknown video message".into())
     }
 }
-pub fn receiver() -> mpsc::SyncSender<Frame> {
+pub struct Receiver {
+    sender: Option<mpsc::SyncSender<Frame>>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl Receiver {
+    pub fn try_send(&self, frame: Frame) -> Result<(), mpsc::TrySendError<Frame>> {
+        self.sender.as_ref().expect("live receiver").try_send(frame)
+    }
+}
+impl Drop for Receiver {
+    fn drop(&mut self) {
+        self.sender.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+pub fn receiver() -> Receiver {
     let (tx, rx) = mpsc::sync_channel::<Frame>(1);
-    std::thread::spawn(move || {
+    let worker = std::thread::spawn(move || {
         let first = match rx.recv() {
             Ok(frame) => frame,
             Err(_) => return,
@@ -66,20 +83,24 @@ pub fn receiver() -> mpsc::SyncSender<Frame> {
             Err(_) => return,
         };
         let (mut width, mut height) = (first.width, first.height);
-        let mut window = match minifb::Window::new(
-            "AirBridge - encrypted mirror (Escape to close)",
-            960,
-            540,
-            minifb::WindowOptions {
-                resize: true,
-                ..Default::default()
-            },
-        ) {
+        let mut window = match receiver_window(false) {
             Ok(w) => w,
             Err(_) => return,
         };
+        let mut fullscreen = false;
+        let mut f11_down = false;
         window.set_target_fps(30);
         while window.is_open() && !window.is_key_down(minifb::Key::Escape) {
+            let pressed = window.is_key_down(minifb::Key::F11);
+            if pressed && !f11_down {
+                fullscreen = !fullscreen;
+                match receiver_window(fullscreen) {
+                    Ok(w) => window = w,
+                    Err(_) => break,
+                }
+            }
+            f11_down = pressed;
+
             match rx.try_recv() {
                 Ok(frame) => match decoder.decode(&frame.packet, frame.width, frame.height) {
                     Ok(p) => {
@@ -100,7 +121,10 @@ pub fn receiver() -> mpsc::SyncSender<Frame> {
             }
         }
     });
-    tx
+    Receiver {
+        sender: Some(tx),
+        worker: Some(worker),
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -120,4 +144,37 @@ mod tests {
         assert_eq!(f.packet, b"abc");
         assert!(a.accept(b"END").is_err());
     }
+}
+
+fn receiver_window(fullscreen: bool) -> Result<minifb::Window, String> {
+    let display = if fullscreen {
+        let screens = screenshots::Screen::all().map_err(|e| e.to_string())?;
+        screens
+            .iter()
+            .find(|s| s.display_info.is_primary)
+            .or(screens.first())
+            .map(|s| s.display_info)
+    } else {
+        None
+    };
+    let (width, height) = display
+        .map(|d| (d.width as usize, d.height as usize))
+        .unwrap_or((960, 540));
+    let mut window = minifb::Window::new(
+        "AirBridge - encrypted mirror (F11 fullscreen, Escape close)",
+        width,
+        height,
+        minifb::WindowOptions {
+            borderless: fullscreen,
+            title: !fullscreen,
+            resize: !fullscreen,
+            ..Default::default()
+        },
+    )
+    .map_err(|e| e.to_string())?;
+    if let Some(d) = display {
+        window.set_position(d.x as isize, d.y as isize)
+    }
+    window.set_target_fps(30);
+    Ok(window)
 }

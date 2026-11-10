@@ -142,4 +142,21 @@ mod desktop_tests {
     }
 }
 
-#[cfg(test)]mod drop_tests{use super::*;#[test]fn later_keyframe_decodes_after_dropped_frames(){let mut encoder=NativeEncoder::new(8,30).unwrap();let mut last=Vec::new();for i in 0..10{last=encoder.encode(64,48,&[150+i,30,60,255].repeat(64*48)).unwrap();}let mut decoder=NativeDecoder::new().unwrap();let pixels=decoder.decode(&last,64,48).unwrap();assert_eq!(pixels.len(),64*48);assert!((((pixels[0]>>16)&255)as i32-159).abs()<12);}}
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+    #[test]
+    fn later_keyframe_decodes_after_dropped_frames() {
+        let mut encoder = NativeEncoder::new(8, 30).unwrap();
+        let mut last = Vec::new();
+        for i in 0..10 {
+            last = encoder
+                .encode(64, 48, &[150 + i, 30, 60, 255].repeat(64 * 48))
+                .unwrap();
+        }
+        let mut decoder = NativeDecoder::new().unwrap();
+        let pixels = decoder.decode(&last, 64, 48).unwrap();
+        assert_eq!(pixels.len(), 64 * 48);
+        assert!((((pixels[0] >> 16) & 255) as i32 - 159).abs() < 12);
+    }
+}

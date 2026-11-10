@@ -32,19 +32,34 @@ pub struct Status {
     pub sent_frames: u64,
     pub received_frames: u64,
     pub media_error: Option<String>,
+    pub events: Vec<String>,
 }
 #[derive(Default)]
 pub struct Pairing {
     status: Arc<Mutex<Status>>,
     commands: Mutex<Option<mpsc::SyncSender<Command>>>,
     stop_stream: Arc<std::sync::atomic::AtomicBool>,
+    workers: crate::workers::Workers,
+    active_socket: Arc<Mutex<Option<TcpStream>>>,
 }
 fn local(ip: Ipv4Addr) -> bool {
     ip.is_private() || ip.is_loopback() || ip.is_link_local()
 }
 fn update(state: &Arc<Mutex<Status>>, f: impl FnOnce(&mut Status)) {
     if let Ok(mut s) = state.lock() {
-        f(&mut s)
+        let previous = s.phase.clone();
+        f(&mut s);
+        if s.phase != previous {
+            let time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let event = format!("{}: {}", time, s.phase);
+            s.events.push(event);
+            if s.events.len() > 100 {
+                s.events.remove(0);
+            }
+        }
     }
 }
 fn send(socket: &mut TcpStream, data: &[u8]) -> Result<(), String> {
@@ -120,11 +135,27 @@ fn secure_send(
         .map_err(|e| e.to_string())?;
     send(socket, &b[..n])
 }
+#[cfg(test)]
 fn session(
+    socket: TcpStream,
+    initiator: bool,
+    state: Arc<Mutex<Status>>,
+    commands: mpsc::Receiver<Command>,
+) -> Result<(), String> {
+    session_cancellable(
+        socket,
+        initiator,
+        state,
+        commands,
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )
+}
+fn session_cancellable(
     mut socket: TcpStream,
     initiator: bool,
     state: Arc<Mutex<Status>>,
     commands: mpsc::Receiver<Command>,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), String> {
     socket
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -156,6 +187,9 @@ fn session(
     let mut incoming = Vec::new();
     let mut bytes = [0; 4096];
     loop {
+        if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
         if let Ok(command) = commands.try_recv() {
             match command {
                 Command::Frame(frame) => {
@@ -265,6 +299,13 @@ fn session(
     }
 }
 fn launch(pairing: &Pairing, address: Option<String>) -> Result<(), String> {
+    if pairing
+        .workers
+        .stop
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err("Application is shutting down".into());
+    }
     let mut slot = pairing
         .commands
         .lock()
@@ -315,7 +356,9 @@ fn launch(pairing: &Pairing, address: Option<String>) -> Result<(), String> {
     };
     drop(status);
     let state = pairing.status.clone();
-    std::thread::spawn(move || {
+    let shutdown = pairing.workers.stop.clone();
+    let active_socket = pairing.active_socket.clone();
+    let worker = std::thread::spawn(move || {
         let result = (|| {
             let socket = if let Some(ip) = target {
                 TcpStream::connect_timeout(&(ip, PORT).into(), Duration::from_secs(5))
@@ -324,7 +367,8 @@ fn launch(pairing: &Pairing, address: Option<String>) -> Result<(), String> {
                 let listener = listener.ok_or("Listener unavailable")?;
                 let deadline = Instant::now();
                 loop {
-                    if rx.try_recv().is_ok() {
+                    if shutdown.load(std::sync::atomic::Ordering::Relaxed) || rx.try_recv().is_ok()
+                    {
                         return Ok(());
                     }
                     if deadline.elapsed() > Duration::from_secs(60) {
@@ -344,8 +388,18 @@ fn launch(pairing: &Pairing, address: Option<String>) -> Result<(), String> {
                     std::thread::sleep(Duration::from_millis(50));
                 }
             };
-            session(socket, target.is_some(), state.clone(), rx)
+            if let Ok(mut active) = active_socket.lock() {
+                *active = Some(socket.try_clone().map_err(|e| e.to_string())?);
+            }
+            if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                let _ = socket.shutdown(std::net::Shutdown::Both);
+                return Ok(());
+            }
+            session_cancellable(socket, target.is_some(), state.clone(), rx, shutdown)
         })();
+        if let Ok(mut active) = active_socket.lock() {
+            active.take();
+        }
         update(&state, |s| {
             s.phase = "disconnected".into();
             s.verification.clear();
@@ -354,6 +408,7 @@ fn launch(pairing: &Pairing, address: Option<String>) -> Result<(), String> {
             s.error = result.err();
         });
     });
+    pairing.workers.track(worker);
     Ok(())
 }
 #[tauri::command]
@@ -494,6 +549,13 @@ pub fn start_mirror(
     display_id: u32,
     state: tauri::State<'_, Pairing>,
 ) -> Result<(), String> {
+    if state
+        .workers
+        .stop
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err("Application is shutting down".into());
+    }
     let settings = crate::settings::load_settings(app)?;
     let status = state.status.lock().map_err(|_| "Session unavailable")?;
     if status.phase != "connected" || !status.local_approved || !status.remote_approved {
@@ -522,7 +584,8 @@ pub fn start_mirror(
         .store(false, std::sync::atomic::Ordering::Relaxed);
     let stop = state.stop_stream.clone();
     let status = state.status.clone();
-    std::thread::spawn(move || {
+    let shutdown = state.workers.stop.clone();
+    let worker = std::thread::spawn(move || {
         let result = (|| {
             let screens = screenshots::Screen::all().map_err(|e| e.to_string())?;
             let screen = screens
@@ -531,7 +594,9 @@ pub fn start_mirror(
                 .ok_or("Selected display unavailable")?;
             let mut encoder =
                 crate::native_codec::NativeEncoder::new(settings.bitrate_mbps, settings.fps)?;
-            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+            while !stop.load(std::sync::atomic::Ordering::Relaxed)
+                && !shutdown.load(std::sync::atomic::Ordering::Relaxed)
+            {
                 if status.lock().map_err(|_| "Session unavailable")?.phase != "connected" {
                     break;
                 }
@@ -577,6 +642,7 @@ pub fn start_mirror(
             s.media_error = result.err();
         });
     });
+    state.workers.track(worker);
     Ok(())
 }
 
@@ -670,4 +736,62 @@ mod media_gate_tests {
         assert!(result.unwrap_err().contains("before mutual approval"));
         assert!(peer.join().unwrap().is_ok());
     }
+}
+
+impl Pairing {
+    pub fn shutdown(&self) {
+        self.stop_stream
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.workers
+            .stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(active) = self.active_socket.lock() {
+            if let Some(socket) = active.as_ref() {
+                let _ = socket.shutdown(std::net::Shutdown::Both);
+            }
+        }
+        self.workers.shutdown();
+    }
+}
+impl Drop for Pairing {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[test]
+    fn shutdown_interrupts_blocked_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (socket, _) = listener.accept().unwrap();
+        let pairing = Pairing::default();
+        *pairing.active_socket.lock().unwrap() = Some(socket.try_clone().unwrap());
+        let shutdown = pairing.workers.stop.clone();
+        let state = pairing.status.clone();
+        let (_tx, rx) = mpsc::sync_channel(4);
+        pairing.workers.track(std::thread::spawn(move || {
+            let _ = session_cancellable(socket, false, state, rx, shutdown);
+        }));
+        let start = Instant::now();
+        pairing.shutdown();
+        assert!(start.elapsed() < Duration::from_secs(1));
+        drop(client);
+    }
+}
+
+#[tauri::command]
+pub fn reconnect_pairing(state: tauri::State<'_, Pairing>) -> Result<(), String> {
+    let address = state
+        .status
+        .lock()
+        .map_err(|_| "Session unavailable")?
+        .peer
+        .clone();
+    if address.is_empty() {
+        return Err("No previous peer address available".into());
+    }
+    launch(&state, Some(address))
 }

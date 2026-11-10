@@ -15,6 +15,7 @@ pub struct Status {
 pub struct Capture {
     stop: Arc<AtomicBool>,
     status: Arc<Mutex<Status>>,
+    workers: crate::workers::Workers,
 }
 #[tauri::command]
 pub fn preview_status(state: tauri::State<'_, Capture>) -> Result<Status, String> {
@@ -34,6 +35,9 @@ pub fn start_preview(
     display_id: u32,
     state: tauri::State<'_, Capture>,
 ) -> Result<(), String> {
+    if state.workers.stop.load(Ordering::Relaxed) {
+        return Err("Application is shutting down".into());
+    }
     let fps = crate::settings::load_settings(app)?.fps;
     let mut status = state
         .status
@@ -50,9 +54,11 @@ pub fn start_preview(
     state.stop.store(false, Ordering::Relaxed);
     let stop = state.stop.clone();
     let status = state.status.clone();
-    std::thread::spawn(move || {
-        let result = std::panic::catch_unwind(|| run(stop, display_id, fps, status.clone()))
-            .unwrap_or_else(|_| Err("Capture worker stopped unexpectedly".into()));
+    let shutdown = state.workers.stop.clone();
+    let worker = std::thread::spawn(move || {
+        let result =
+            std::panic::catch_unwind(|| run(stop, display_id, fps, status.clone(), shutdown))
+                .unwrap_or_else(|_| Err("Capture worker stopped unexpectedly".into()));
         if let Ok(mut s) = status.lock() {
             s.running = false;
             match result {
@@ -61,6 +67,7 @@ pub fn start_preview(
             }
         }
     });
+    state.workers.track(worker);
     Ok(())
 }
 fn run(
@@ -68,7 +75,11 @@ fn run(
     display_id: u32,
     fps: u32,
     status: Arc<Mutex<Status>>,
+    shutdown: Arc<AtomicBool>,
 ) -> Result<u64, String> {
+    if shutdown.load(Ordering::Relaxed) {
+        return Ok(0);
+    }
     let screens = screenshots::Screen::all().map_err(|e| e.to_string())?;
     let screen = screens
         .iter()
@@ -94,6 +105,7 @@ fn run(
     while window.is_open()
         && !window.is_key_down(minifb::Key::Escape)
         && !stop.load(Ordering::Relaxed)
+        && !shutdown.load(Ordering::Relaxed)
     {
         let capture_started = std::time::Instant::now();
         let image = screen.capture().map_err(|e| e.to_string())?;
@@ -216,4 +228,16 @@ pub async fn save_screenshot(app: tauri::AppHandle, display_id: u32) -> Result<S
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+impl Capture {
+    pub fn shutdown(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.workers.shutdown();
+    }
+}
+impl Drop for Capture {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }

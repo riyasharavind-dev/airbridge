@@ -7,6 +7,8 @@ mod media;
 mod native_codec;
 mod pairing;
 mod settings;
+mod workers;
+use tauri::Manager;
 #[derive(serde::Serialize)]
 struct Diagnostics {
     os: String,
@@ -61,11 +63,19 @@ fn main() {
             codec::receiver_preview,
             pairing::listen_pairing,
             pairing::connect_pairing,
+            pairing::reconnect_pairing,
             pairing::pairing_status,
             pairing::pairing_action,
             pairing::start_mirror,
             pairing::stop_mirror
         ])
-        .run(tauri::generate_context!())
-        .expect("AirBridge startup failed");
+        .build(tauri::generate_context!())
+        .expect("AirBridge startup failed")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                app.state::<pairing::Pairing>().shutdown();
+                app.state::<capture::Capture>().shutdown();
+                app.state::<discovery::Discovery>().shutdown();
+            }
+        });
 }
