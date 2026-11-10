@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod discovery;
 mod settings;
+mod capture;
 #[derive(serde::Serialize)]
 struct Diagnostics { os: String, architecture: String, device_name: String, session_type: String }
 #[tauri::command]
@@ -14,4 +15,4 @@ async fn hardware_report()->Result<String,String>{
   #[cfg(not(windows))] { Err("Windows GPU diagnostics are unavailable on this platform".into()) }
  }).await.map_err(|e|e.to_string())?
 }
-fn main() { let discovery = discovery::Discovery::start(); tauri::Builder::default().manage(discovery).invoke_handler(tauri::generate_handler![diagnostics, discovery::nearby_devices, settings::load_settings, settings::save_settings, hardware_report]).run(tauri::generate_context!()).expect("AirBridge startup failed"); }
+fn main() { let discovery = discovery::Discovery::start(); tauri::Builder::default().manage(discovery).manage(capture::Capture::default()).invoke_handler(tauri::generate_handler![diagnostics, discovery::nearby_devices, settings::load_settings, settings::save_settings, hardware_report, capture::start_preview, capture::stop_preview, capture::preview_status]).run(tauri::generate_context!()).expect("AirBridge startup failed"); }

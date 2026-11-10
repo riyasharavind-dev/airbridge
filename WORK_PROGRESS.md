@@ -28,3 +28,6 @@ Implemented UDP broadcast discovery on port 45873, bounded advertisement parsing
 
 ## Windows-first development
 Added persistent validated device/video preferences and Windows GPU/driver inspection through CIM. Four native tests passed; TypeScript/Vite production build passed. These preferences do not enable streaming. Secure pairing, native capture, H.264 encoding/decoding, encrypted transport, native receiver rendering and genuine virtual display remain unimplemented. Latest installer must be rebuilt before distributing these changes. Full Windows completion has not been achieved.
+
+## Native screen capture
+Added native capture of the first display with a separate framebuffer preview window, explicit start/stop controls and Escape-to-close. Captures stay local. Frontend production build passed; four existing native tests passed; the explicit real_capture_smoke test passed on the actual Windows desktop (one frame captured in memory, not saved or transmitted). Native preview visual rendering, sustained FPS, network streaming, secure pairing and genuine extended display remain unverified/unimplemented. Windows installer rebuild in progress.
