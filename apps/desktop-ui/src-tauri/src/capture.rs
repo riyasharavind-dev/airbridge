@@ -34,3 +34,22 @@ fn run(stop:Arc<AtomicBool>,display_id:u32)->Result<u64,String>{
 #[derive(serde::Serialize)]pub struct Display {id:u32,width:u32,height:u32,x:i32,y:i32,primary:bool}
 #[tauri::command]
 pub async fn list_displays()->Result<Vec<Display>,String>{tauri::async_runtime::spawn_blocking(||screenshots::Screen::all().map(|screens|screens.into_iter().map(|screen|{let d=screen.display_info;Display{id:d.id,width:d.width,height:d.height,x:d.x,y:d.y,primary:d.is_primary}}).collect()).map_err(|e|e.to_string())).await.map_err(|e|e.to_string())?}
+
+#[tauri::command]
+pub async fn save_screenshot(app:tauri::AppHandle,display_id:u32)->Result<String,String>{
+ use tauri::Manager;
+ let folder=app.path().picture_dir().map_err(|e|e.to_string())?.join("AirBridge");
+ tauri::async_runtime::spawn_blocking(move||{
+  let screens=screenshots::Screen::all().map_err(|e|e.to_string())?;
+  let screen=screens.iter().find(|s|s.display_info.id==display_id).ok_or("Selected display is no longer available; refresh displays")?;
+  let image=screen.capture().map_err(|e|e.to_string())?;
+  std::fs::create_dir_all(&folder).map_err(|e|e.to_string())?;
+  let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e|e.to_string())?.as_nanos();
+  let path=folder.join(format!("AirBridge-{}-{}.png",display_id,stamp));
+  let file=std::fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
+  let mut writer=std::io::BufWriter::new(file);
+  image.write_to(&mut writer,screenshots::image::ImageOutputFormat::Png).map_err(|e|e.to_string())?;
+  use std::io::Write;writer.flush().map_err(|e|e.to_string())?;
+  Ok(path.to_string_lossy().into_owned())
+ }).await.map_err(|e|e.to_string())?
+}

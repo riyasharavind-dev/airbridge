@@ -34,3 +34,6 @@ Added native capture of the first display with a separate framebuffer preview wi
 
 ## Display selection
 Added actual monitor enumeration (ID, dimensions, position, primary flag), display selection, refresh and capture of selected monitor. Hot-unplug selection returns an explicit error. Four native tests and frontend production build passed. Multiple physical monitor behavior and updated preview UI not manually verified. Installer not rebuilt for this change. Secure pairing remains unimplemented.
+
+## Selected display PNG export
+Added asynchronous screenshot export to Pictures/AirBridge with unique filenames, create-new protection, explicit flush, actual saved path, busy state and error reporting. Native tests passed (four; interactive capture check skipped in this run). Export UI and file output not manually exercised. Installer not rebuilt. Secure pairing and streaming remain unimplemented.
