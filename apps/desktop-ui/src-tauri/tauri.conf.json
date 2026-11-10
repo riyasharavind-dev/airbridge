@@ -26,6 +26,9 @@
       "nsis"
     ],
     "shortDescription": "AirBridge development build",
-    "longDescription": "Wireless display application under development. Streaming is not yet available."
+    "longDescription": "Development prototype with mutually approved encrypted mirroring and built-in software H.264 codecs. Extended display is unavailable.",
+    "resources": [
+      "notices/*"
+    ]
   }
 }

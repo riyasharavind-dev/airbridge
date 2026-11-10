@@ -13,12 +13,12 @@ Current state: development prototype. Full product acceptance is not complete.
 ## Must finish before a reliable Windows release
 - Verify continuous mirroring on two physical computers, both directions.
 - Validate native window startup/rendering, close, Escape and disconnect cleanup.
-- Replace per-frame FFmpeg processes with persistent codec pipeline; measure sustained FPS, latency, CPU and memory.
+- Persistent native H.264 codec pipeline is implemented; still measure sustained FPS, latency, CPU and memory across two devices.
 - Hardware encoder/decoder runtime probes, software fallback selection and adaptive bitrate.
 - Reconnection after Wi-Fi loss; persistent peer identity/credential storage and reviewed pairing protocol.
 - App shutdown must cancel/join all capture, discovery, session and codec workers.
 - Capture backend migration/evaluation for Windows Graphics Capture/Desktop Duplication; current screenshots capture is a fallback prototype.
-- Dependency deployment for other computers: current media requires FFmpeg/libx264 on PATH; it is not bundled.
+- Mirror codec is compiled into the application. Optional FFmpeg diagnostics still require FFmpeg on PATH; verify clean-machine native codec startup.
 - Firewall onboarding and testing, network-isolation errors and rate limits.
 - Fresh installer/uninstaller tests, cleanup policy, signing and offline WebView2 strategy.
 - Genuine Windows IddCx virtual-display driver, WDK integration, monitor lifecycle tests and driver signing. Extended mode unavailable until verified.

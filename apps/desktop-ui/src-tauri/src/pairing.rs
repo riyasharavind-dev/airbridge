@@ -529,6 +529,8 @@ pub fn start_mirror(
                 .iter()
                 .find(|s| s.display_info.id == display_id)
                 .ok_or("Selected display unavailable")?;
+            let mut encoder =
+                crate::native_codec::NativeEncoder::new(settings.bitrate_mbps, settings.fps)?;
             while !stop.load(std::sync::atomic::Ordering::Relaxed) {
                 if status.lock().map_err(|_| "Session unavailable")?.phase != "connected" {
                     break;
@@ -543,23 +545,21 @@ pub fn start_mirror(
                 let ratio = (max_w / frame.width() as f64)
                     .min(max_h / frame.height() as f64)
                     .min(1.0);
-                let w = (frame.width() as f64 * ratio).floor().max(2.0) as u32;
-                let h = (frame.height() as f64 * ratio).floor().max(2.0) as u32;
+                let w = ((frame.width() as f64 * ratio).floor().max(2.0) as u32) & !1;
+                let h = ((frame.height() as f64 * ratio).floor().max(2.0) as u32) & !1;
                 let frame = screenshots::image::imageops::resize(
                     &frame,
                     w,
                     h,
                     screenshots::image::imageops::FilterType::Triangle,
                 );
-                let (info, packet) = crate::codec::encode_with_bitrate(
-                    w,
-                    h,
-                    frame.into_raw(),
-                    settings.bitrate_mbps,
-                )?;
+                let packet = encoder.encode(w, h, frame.as_raw())?;
+                if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
                 match tx.try_send(Command::Frame(crate::media::Frame {
-                    width: info.width,
-                    height: info.height,
+                    width: w,
+                    height: h,
                     packet,
                 })) {
                     Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
@@ -584,7 +584,7 @@ pub fn start_mirror(
 mod media_transport_tests {
     use super::*;
     #[test]
-    #[ignore = "Requires FFmpeg/libx264"]
+
     fn real_h264_over_encrypted_tcp() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -600,9 +600,10 @@ mod media_transport_tests {
                 let mut plain = [0; 4096];
                 let n = noise.read_message(&packet, &mut plain).unwrap();
                 if let Some(frame) = assembly.accept(&plain[..n]).unwrap() {
-                    let pixels =
-                        crate::codec::decode_packet(frame.packet, frame.width, frame.height)
-                            .unwrap();
+                    let pixels = crate::native_codec::NativeDecoder::new()
+                        .unwrap()
+                        .decode(&frame.packet, frame.width, frame.height)
+                        .unwrap();
                     assert_eq!(pixels.len(), 64 * 48);
                     assert!((((pixels[0] >> 16) & 255) as i32 - 200).abs() < 10);
                     break;
@@ -615,10 +616,13 @@ mod media_transport_tests {
             .unwrap();
         let (mut noise, _) = handshake(&mut socket, true).unwrap();
         let rgba = [200u8, 30, 60, 255].repeat(64 * 48);
-        let (info, packet) = crate::codec::encode_packet(64, 48, rgba).unwrap();
+        let packet = crate::native_codec::NativeEncoder::new(8, 30)
+            .unwrap()
+            .encode(64, 48, &rgba)
+            .unwrap();
         let mut header = b"FRAME".to_vec();
-        header.extend_from_slice(&info.width.to_be_bytes());
-        header.extend_from_slice(&info.height.to_be_bytes());
+        header.extend_from_slice(&64u32.to_be_bytes());
+        header.extend_from_slice(&48u32.to_be_bytes());
         header.extend_from_slice(&(packet.len() as u32).to_be_bytes());
         secure_send(&mut socket, &mut noise, &header).unwrap();
         for chunk in packet.chunks(3000) {

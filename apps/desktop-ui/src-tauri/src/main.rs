@@ -4,6 +4,7 @@ mod codec;
 mod dependencies;
 mod discovery;
 mod media;
+mod native_codec;
 mod pairing;
 mod settings;
 #[derive(serde::Serialize)]

@@ -57,8 +57,11 @@ pub fn receiver() -> mpsc::SyncSender<Frame> {
             Ok(frame) => frame,
             Err(_) => return,
         };
-        let mut pixels = match crate::codec::decode_packet(first.packet, first.width, first.height)
-        {
+        let mut decoder = match crate::native_codec::NativeDecoder::new() {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let mut pixels = match decoder.decode(&first.packet, first.width, first.height) {
             Ok(p) => p,
             Err(_) => return,
         };
@@ -78,16 +81,14 @@ pub fn receiver() -> mpsc::SyncSender<Frame> {
         window.set_target_fps(30);
         while window.is_open() && !window.is_key_down(minifb::Key::Escape) {
             match rx.try_recv() {
-                Ok(frame) => {
-                    match crate::codec::decode_packet(frame.packet, frame.width, frame.height) {
-                        Ok(p) => {
-                            pixels = p;
-                            width = frame.width;
-                            height = frame.height
-                        }
-                        Err(_) => break,
+                Ok(frame) => match decoder.decode(&frame.packet, frame.width, frame.height) {
+                    Ok(p) => {
+                        pixels = p;
+                        width = frame.width;
+                        height = frame.height
                     }
-                }
+                    Err(_) => break,
+                },
                 Err(mpsc::TryRecvError::Disconnected) => break,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
