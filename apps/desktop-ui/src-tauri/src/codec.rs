@@ -26,3 +26,5 @@ pub async fn test_h264(display_id:u32)->Result<EncodingResult,String>{tauri::asy
  let frame=screen.capture().map_err(|e|e.to_string())?;encode(frame.width(),frame.height(),frame.into_raw())
 }).await.map_err(|e|e.to_string())?}
 #[cfg(test)]mod tests{use super::*;#[test]fn rejects_invalid_input_before_starting_encoder(){assert!(encode(0,1,vec![]).is_err());assert!(encode(2,2,vec![0;4]).is_err());assert!(encode(20000,1,vec![]).is_err());}}
+
+#[cfg(test)]mod integration_tests{use super::*;#[test]#[ignore="Requires FFmpeg/libx264 and interactive desktop"]fn actual_screen_h264(){let screens=screenshots::Screen::all().unwrap();let frame=screens.first().unwrap().capture().unwrap();let result=encode(frame.width(),frame.height(),frame.into_raw()).unwrap();assert!(result.encoded_bytes>0);println!("Actual capture encoded: {}x{}, {} bytes, {:.1} ms",result.width,result.height,result.encoded_bytes,result.elapsed_ms);}}
